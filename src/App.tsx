@@ -120,6 +120,7 @@ interface Bullet {
   vy: number;
   power: number;
   color: string;
+  isEnemy?: boolean;
 }
 
 interface Enemy {
@@ -133,6 +134,7 @@ interface Enemy {
   type: 'basic' | 'fast' | 'heavy';
   color: string;
   scoreValue: number;
+  lastShot: number;
 }
 
 interface PowerUp {
@@ -177,6 +179,7 @@ export default function App() {
   const [score, setScore] = useState(0);
   const [level, setLevel] = useState(1);
   const [health, setHealth] = useState(3);
+  const [timeLeft, setTimeLeft] = useState(45);
   const [imagesLoaded, setImagesLoaded] = useState(false);
   
   const imagesRef = useRef<Record<string, HTMLImageElement>>({});
@@ -220,7 +223,7 @@ export default function App() {
   const requestRef = useRef<number>(null);
   
   // Game Entities Refs
-  const playerRef = useRef({ x: 0, y: 0, w: 40, h: 40, invul: 0, shield: false, triple: 0 });
+  const playerRef = useRef({ x: 0, y: 0, w: 60, h: 60, invul: 0, shield: false, triple: 0 });
   const bulletsRef = useRef<Bullet[]>([]);
   const enemiesRef = useRef<Enemy[]>([]);
   const particlesRef = useRef<Particle[]>([]);
@@ -255,6 +258,7 @@ export default function App() {
     setScore(0);
     setLevel(1);
     setHealth(3);
+    setTimeLeft(45);
     setGameState('PLAYING');
     
     const canvas = canvasRef.current;
@@ -262,8 +266,8 @@ export default function App() {
       playerRef.current = { 
         x: canvas.width / 2, 
         y: canvas.height - 80, 
-        w: 40, 
-        h: 40, 
+        w: 60, 
+        h: 60, 
         invul: 0, 
         shield: false, 
         triple: 0 
@@ -277,6 +281,8 @@ export default function App() {
 
   const nextLevel = () => {
     setLevel(l => l + 1);
+    setHealth(3); // Restore health
+    setTimeLeft(45); // Reset timer
     setGameState('PLAYING');
     enemiesRef.current = [];
     bulletsRef.current = [];
@@ -310,15 +316,16 @@ export default function App() {
     const diffMod = difficulty === 'EASY' ? 0.7 : difficulty === 'HARD' ? 1.5 : 1;
     
     let enemy: Enemy;
+    const now = Date.now();
     switch(type) {
       case 'fast':
-        enemy = { x: randomRange(20, width - 20), y: -50, width: 30, height: 30, hp: 1, maxHp: 1, speed: (4 + level * 0.5) * diffMod, type, color: COLORS.FAST, scoreValue: 150 };
+        enemy = { x: randomRange(20, width - 20), y: -50, width: 30, height: 30, hp: 1, maxHp: 1, speed: (4 + level * 0.5) * diffMod, type, color: COLORS.FAST, scoreValue: 150, lastShot: now };
         break;
       case 'heavy':
-        enemy = { x: randomRange(40, width - 40), y: -50, width: 60, height: 60, hp: Math.ceil(3 * diffMod), maxHp: Math.ceil(3 * diffMod), speed: (1.5 + level * 0.1) * diffMod, type, color: COLORS.HEAVY, scoreValue: 500 };
+        enemy = { x: randomRange(40, width - 40), y: -50, width: 60, height: 60, hp: Math.ceil(3 * diffMod), maxHp: Math.ceil(3 * diffMod), speed: (1.5 + level * 0.1) * diffMod, type, color: COLORS.HEAVY, scoreValue: 500, lastShot: now };
         break;
       default:
-        enemy = { x: randomRange(30, width - 30), y: -50, width: 40, height: 40, hp: 1, maxHp: 1, speed: (2 + level * 0.2) * diffMod, type: 'basic', color: COLORS.BASIC, scoreValue: 100 };
+        enemy = { x: randomRange(30, width - 30), y: -50, width: 40, height: 40, hp: 1, maxHp: 1, speed: (2 + level * 0.2) * diffMod, type: 'basic', color: COLORS.BASIC, scoreValue: 100, lastShot: now };
     }
     enemiesRef.current.push(enemy);
   };
@@ -364,13 +371,14 @@ export default function App() {
     if (keysRef.current[' '] && now - lastShotRef.current > 150) {
       sounds.playShoot();
       const bSpeed = 10;
+      const spawnY = player.y - player.h / 2 - 10;
       if (player.triple > 0) {
-        bulletsRef.current.push({ x: player.x, y: player.y - 20, vx: 0, vy: -bSpeed, power: 1, color: COLORS.BULLET });
-        bulletsRef.current.push({ x: player.x, y: player.y - 20, vx: -2, vy: -bSpeed, power: 1, color: COLORS.BULLET });
-        bulletsRef.current.push({ x: player.x, y: player.y - 20, vx: 2, vy: -bSpeed, power: 1, color: COLORS.BULLET });
+        bulletsRef.current.push({ x: player.x, y: spawnY, vx: 0, vy: -bSpeed, power: 1, color: COLORS.BULLET });
+        bulletsRef.current.push({ x: player.x, y: spawnY, vx: -2, vy: -bSpeed, power: 1, color: COLORS.BULLET });
+        bulletsRef.current.push({ x: player.x, y: spawnY, vx: 2, vy: -bSpeed, power: 1, color: COLORS.BULLET });
         player.triple -= 1;
       } else {
-        bulletsRef.current.push({ x: player.x, y: player.y - 20, vx: 0, vy: -bSpeed, power: 1, color: COLORS.BULLET });
+        bulletsRef.current.push({ x: player.x, y: spawnY, vx: 0, vy: -bSpeed, power: 1, color: COLORS.BULLET });
       }
       lastShotRef.current = now;
     }
@@ -378,7 +386,27 @@ export default function App() {
     bulletsRef.current = bulletsRef.current.filter(b => {
       b.x += b.vx;
       b.y += b.vy;
-      return b.y > -20 && b.x > -20 && b.x < canvas.width + 20;
+
+      // Enemy bullet collision with player
+      if (b.isEnemy && player.invul <= 0) {
+        if (Math.abs(b.x - player.x) < player.w / 2 && Math.abs(b.y - player.y) < player.h / 2) {
+          if (player.shield) {
+            player.shield = false;
+            unlockAchievement('shield_master');
+            sounds.playPowerUp();
+          } else {
+            setHealth(h => {
+              const newH = h - 1;
+              if (newH <= 0) setGameState('GAMEOVER');
+              return newH;
+            });
+          }
+          player.invul = 120;
+          return false;
+        }
+      }
+
+      return b.y > -50 && b.y < canvas.height + 50 && b.x > -50 && b.x < canvas.width + 50;
     });
 
     const spawnRate = (0.01 + level * 0.002) * (difficulty === 'EASY' ? 0.5 : difficulty === 'HARD' ? 2 : 1);
@@ -389,8 +417,24 @@ export default function App() {
     enemiesRef.current = enemiesRef.current.filter(e => {
       e.y += e.speed;
       
+      // Enemy firing logic
+      const now = Date.now();
+      const fireInterval = difficulty === 'HARD' ? 1500 : 2500;
+      if (now - e.lastShot > fireInterval && e.y > 0 && e.y < canvas.height * 0.6) {
+        bulletsRef.current.push({
+          x: e.x,
+          y: e.y + e.height / 2,
+          vx: 0,
+          vy: 5,
+          power: 1,
+          color: '#ff4400', // Bright orange for enemy missiles
+          isEnemy: true
+        });
+        e.lastShot = now;
+      }
+
       bulletsRef.current.forEach((b, bi) => {
-        if (b.x > e.x - e.width/2 && b.x < e.x + e.width/2 && b.y > e.y - e.height/2 && b.y < e.y + e.height/2) {
+        if (!b.isEnemy && b.x > e.x - e.width/2 && b.x < e.x + e.width/2 && b.y > e.y - e.height/2 && b.y < e.y + e.height/2) {
           e.hp -= b.power;
           bulletsRef.current.splice(bi, 1);
           createExplosion(b.x, b.y, e.color, 5);
@@ -477,11 +521,17 @@ export default function App() {
     if (player.invul > 0) player.invul--;
     if (shakeRef.current > 0) shakeRef.current *= 0.9;
 
-    if (score >= level * 2000) {
-      sounds.playLevelUp();
-      setGameState('LEVEL_COMPLETE');
-      if (level === 3) unlockAchievement('survivor');
-    }
+    // Timer logic
+    setTimeLeft(prev => {
+      const next = prev - 1/60; // Assuming 60fps
+      if (next <= 0) {
+        sounds.playLevelUp();
+        setGameState('LEVEL_COMPLETE');
+        if (level === 3) unlockAchievement('survivor');
+        return 0;
+      }
+      return next;
+    });
   };
 
   const draw = (ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement) => {
@@ -596,11 +646,27 @@ export default function App() {
 
     ctx.fillStyle = COLORS.BULLET;
     bulletsRef.current.forEach(b => {
-      ctx.shadowBlur = 10;
-      ctx.shadowColor = b.color;
-      ctx.beginPath();
-      ctx.arc(b.x, b.y, 3, 0, Math.PI * 2);
-      ctx.fill();
+      if (b.isEnemy) {
+        ctx.shadowBlur = 20;
+        ctx.shadowColor = '#ff4400';
+        ctx.fillStyle = '#ff4400';
+        // Draw a larger, glowing missile
+        ctx.beginPath();
+        ctx.ellipse(b.x, b.y, 6, 10, 0, 0, Math.PI * 2);
+        ctx.fill();
+        // Add a white core for better visibility
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.ellipse(b.x, b.y, 2, 5, 0, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = b.color;
+        ctx.fillStyle = b.color;
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
       ctx.shadowBlur = 0;
     });
 
@@ -809,6 +875,13 @@ export default function App() {
                 <div className="flex flex-col">
                   <span className="text-[10px] uppercase tracking-widest text-white/40 font-bold">Level</span>
                   <span className="text-2xl font-mono font-bold text-purple-400">{level}</span>
+                </div>
+                <div className="w-px h-8 bg-white/10" />
+                <div className="flex flex-col">
+                  <span className="text-[10px] uppercase tracking-widest text-white/40 font-bold">Time</span>
+                  <span className={`text-2xl font-mono font-bold ${timeLeft < 10 ? 'text-red-500 animate-pulse' : 'text-yellow-400'}`}>
+                    {Math.ceil(timeLeft)}s
+                  </span>
                 </div>
               </div>
             </div>
