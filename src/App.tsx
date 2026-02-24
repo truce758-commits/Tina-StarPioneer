@@ -91,7 +91,8 @@ const sounds = new SoundManager();
 
 // --- Types & Constants ---
 
-type GameState = 'START' | 'PLAYING' | 'PAUSED' | 'GAMEOVER';
+type GameState = 'START' | 'PLAYING' | 'PAUSED' | 'GAMEOVER' | 'LEVEL_COMPLETE';
+type Difficulty = 'EASY' | 'NORMAL' | 'HARD';
 
 interface Achievement {
   id: string;
@@ -172,6 +173,7 @@ const randomRange = (min: number, max: number) => Math.random() * (max - min) + 
 
 export default function App() {
   const [gameState, setGameState] = useState<GameState>('START');
+  const [difficulty, setDifficulty] = useState<Difficulty>('NORMAL');
   const [score, setScore] = useState(0);
   const [level, setLevel] = useState(1);
   const [health, setHealth] = useState(3);
@@ -247,8 +249,9 @@ export default function App() {
 
   // --- Game Initialization ---
 
-  const initGame = () => {
+  const initGame = (diff?: Difficulty) => {
     sounds.init();
+    if (diff) setDifficulty(diff);
     setScore(0);
     setLevel(1);
     setHealth(3);
@@ -269,6 +272,14 @@ export default function App() {
     bulletsRef.current = [];
     enemiesRef.current = [];
     particlesRef.current = [];
+    powerUpsRef.current = [];
+  };
+
+  const nextLevel = () => {
+    setLevel(l => l + 1);
+    setGameState('PLAYING');
+    enemiesRef.current = [];
+    bulletsRef.current = [];
     powerUpsRef.current = [];
   };
 
@@ -296,16 +307,18 @@ export default function App() {
     const types: Enemy['type'][] = ['basic', 'fast', 'heavy'];
     const type = types[Math.floor(Math.random() * Math.min(level, 3))];
     
+    const diffMod = difficulty === 'EASY' ? 0.7 : difficulty === 'HARD' ? 1.5 : 1;
+    
     let enemy: Enemy;
     switch(type) {
       case 'fast':
-        enemy = { x: randomRange(20, width - 20), y: -50, width: 30, height: 30, hp: 1, maxHp: 1, speed: 4 + level * 0.5, type, color: COLORS.FAST, scoreValue: 150 };
+        enemy = { x: randomRange(20, width - 20), y: -50, width: 30, height: 30, hp: 1, maxHp: 1, speed: (4 + level * 0.5) * diffMod, type, color: COLORS.FAST, scoreValue: 150 };
         break;
       case 'heavy':
-        enemy = { x: randomRange(40, width - 40), y: -50, width: 60, height: 60, hp: 3, maxHp: 3, speed: 1.5 + level * 0.1, type, color: COLORS.HEAVY, scoreValue: 500 };
+        enemy = { x: randomRange(40, width - 40), y: -50, width: 60, height: 60, hp: Math.ceil(3 * diffMod), maxHp: Math.ceil(3 * diffMod), speed: (1.5 + level * 0.1) * diffMod, type, color: COLORS.HEAVY, scoreValue: 500 };
         break;
       default:
-        enemy = { x: randomRange(30, width - 30), y: -50, width: 40, height: 40, hp: 1, maxHp: 1, speed: 2 + level * 0.2, type: 'basic', color: COLORS.BASIC, scoreValue: 100 };
+        enemy = { x: randomRange(30, width - 30), y: -50, width: 40, height: 40, hp: 1, maxHp: 1, speed: (2 + level * 0.2) * diffMod, type: 'basic', color: COLORS.BASIC, scoreValue: 100 };
     }
     enemiesRef.current.push(enemy);
   };
@@ -368,7 +381,8 @@ export default function App() {
       return b.y > -20 && b.x > -20 && b.x < canvas.width + 20;
     });
 
-    if (Math.random() < 0.01 + level * 0.002) {
+    const spawnRate = (0.01 + level * 0.002) * (difficulty === 'EASY' ? 0.5 : difficulty === 'HARD' ? 2 : 1);
+    if (Math.random() < spawnRate) {
       spawnEnemy(canvas.width);
     }
 
@@ -463,15 +477,10 @@ export default function App() {
     if (player.invul > 0) player.invul--;
     if (shakeRef.current > 0) shakeRef.current *= 0.9;
 
-    if (score > level * 2000) {
+    if (score >= level * 2000) {
       sounds.playLevelUp();
-      setLevel(l => {
-        const next = l + 1;
-        if (next === 3) unlockAchievement('survivor');
-        enemiesRef.current = [];
-        createExplosion(canvas.width/2, canvas.height/2, COLORS.PLAYER, 100, true);
-        return next;
-      });
+      setGameState('LEVEL_COMPLETE');
+      if (level === 3) unlockAchievement('survivor');
     }
   };
 
@@ -646,17 +655,19 @@ export default function App() {
 
   useEffect(() => {
     const handleResize = () => {
-      if (containerRef.current && canvasRef.current) {
-        canvasRef.current.width = containerRef.current.clientWidth;
-        canvasRef.current.height = containerRef.current.clientHeight;
-        initStars(canvasRef.current.width, canvasRef.current.height);
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const rect = canvas.getBoundingClientRect();
+        canvas.width = rect.width;
+        canvas.height = rect.height;
+        initStars(canvas.width, canvas.height);
       }
     };
     window.addEventListener('resize', handleResize);
     handleResize();
     const handleKeyDown = (e: KeyboardEvent) => {
       keysRef.current[e.key] = true;
-      if (e.key === 'p' || e.key === 'P') {
+      if (e.key === 'p' || e.key === 'P' || e.key === 'Escape') {
         setGameState(prev => prev === 'PLAYING' ? 'PAUSED' : prev === 'PAUSED' ? 'PLAYING' : prev);
       }
     };
@@ -864,40 +875,94 @@ export default function App() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="absolute inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-40 p-6"
+                className="absolute inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-40 p-6 overflow-y-auto"
               >
-                <div className="max-w-md w-full text-center space-y-12">
+                <div className="max-w-2xl w-full text-center space-y-12 py-12">
                   <motion.div
-                    initial={{ scale: 0.8, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    transition={{ delay: 0.2 }}
+                    initial={{ y: -50, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    transition={{ type: 'spring', damping: 12 }}
                   >
-                    <h2 className="text-7xl font-black tracking-tighter mb-2 italic">
-                      TINA <span className="text-cyan-400">STAR</span>
+                    <h2 className="text-8xl font-black tracking-tighter mb-2 italic bg-clip-text text-transparent bg-gradient-to-b from-white via-cyan-400 to-blue-600">
+                      TINA <span className="text-white">STAR</span>
                     </h2>
-                    <p className="text-xl font-bold text-white/30 uppercase tracking-[0.8em]">Pioneer</p>
+                    <p className="text-2xl font-bold text-cyan-400/50 uppercase tracking-[1em] ml-[1em]">Pioneer</p>
                   </motion.div>
 
-                  <div className="grid grid-cols-2 gap-4 text-left">
-                    <div className="p-5 rounded-3xl bg-white/5 border border-white/10 backdrop-blur-sm">
-                      <p className="text-[10px] font-bold text-white/40 uppercase mb-2">Desktop</p>
-                      <p className="text-xs text-white/80">WASD / 鼠标移动<br/>空格 / 点击射击</p>
-                    </div>
-                    <div className="p-5 rounded-3xl bg-white/5 border border-white/10 backdrop-blur-sm">
-                      <p className="text-[10px] font-bold text-white/40 uppercase mb-2">Mobile</p>
-                      <p className="text-xs text-white/80">滑动 移动<br/>自动射击</p>
+                  <div className="space-y-6">
+                    <p className="text-xs font-black uppercase tracking-[0.3em] text-white/40">选择难度等级</p>
+                    <div className="grid grid-cols-3 gap-4">
+                      {[
+                        { id: 'EASY', label: '简单', color: 'from-emerald-500 to-teal-600', desc: '敌机较少，速度慢' },
+                        { id: 'NORMAL', label: '普通', color: 'from-cyan-500 to-blue-600', desc: '标准挑战' },
+                        { id: 'HARD', label: '困难', color: 'from-rose-500 to-red-600', desc: '疯狂的弹幕与速度' }
+                      ].map((d) => (
+                        <button
+                          key={d.id}
+                          onClick={() => initGame(d.id as Difficulty)}
+                          className={`group relative p-6 rounded-3xl bg-gradient-to-br ${d.color} transition-all transform hover:scale-105 active:scale-95 shadow-2xl overflow-hidden`}
+                        >
+                          <div className="relative z-10 space-y-1">
+                            <p className="text-2xl font-black text-white">{d.label}</p>
+                            <p className="text-[10px] text-white/60 font-bold uppercase">{d.id}</p>
+                          </div>
+                          <div className="absolute inset-0 bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity" />
+                        </button>
+                      ))}
                     </div>
                   </div>
 
-                  <button 
-                    onClick={initGame}
-                    className="group relative w-full py-6 bg-cyan-500 hover:bg-cyan-400 text-black font-black text-2xl rounded-3xl transition-all transform hover:scale-105 active:scale-95 overflow-hidden shadow-[0_0_40px_rgba(6,182,212,0.5)]"
-                  >
-                    <div className="relative z-10 flex items-center justify-center gap-3">
-                      <Play className="w-8 h-8 fill-current" /> 开始游戏
+                  <div className="grid grid-cols-2 gap-4 text-left">
+                    <div className="p-6 rounded-3xl bg-white/5 border border-white/10 backdrop-blur-sm">
+                      <p className="text-[10px] font-bold text-cyan-400 uppercase mb-3 tracking-widest">Desktop Controls</p>
+                      <div className="space-y-2 text-xs text-white/60">
+                        <p className="flex justify-between"><span>移动</span> <span className="text-white font-mono">WASD / 鼠标</span></p>
+                        <p className="flex justify-between"><span>射击</span> <span className="text-white font-mono">空格 / 左键</span></p>
+                        <p className="flex justify-between"><span>暂停</span> <span className="text-white font-mono">P / ESC</span></p>
+                      </div>
                     </div>
-                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
-                  </button>
+                    <div className="p-6 rounded-3xl bg-white/5 border border-white/10 backdrop-blur-sm">
+                      <p className="text-[10px] font-bold text-purple-400 uppercase mb-3 tracking-widest">Mobile Controls</p>
+                      <div className="space-y-2 text-xs text-white/60">
+                        <p>滑动屏幕控制移动</p>
+                        <p>战机将自动进行射击</p>
+                        <p>点击右上角可暂停游戏</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+
+            {gameState === 'LEVEL_COMPLETE' && (
+              <motion.div 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="absolute inset-0 bg-cyan-950/90 backdrop-blur-xl flex items-center justify-center z-40 p-6"
+              >
+                <div className="max-w-md w-full text-center space-y-8">
+                  <div className="space-y-2">
+                    <h2 className="text-7xl font-black italic text-cyan-400 tracking-tighter">LEVEL CLEAR</h2>
+                    <p className="text-white/40 font-bold uppercase tracking-[0.3em]">关卡已完成</p>
+                  </div>
+                  <div className="bg-black/60 border border-cyan-500/30 p-10 rounded-[2.5rem] shadow-2xl">
+                    <p className="text-sm text-white/60 mb-8">准备好进入下一阶段了吗？</p>
+                    <div className="space-y-4">
+                      <button 
+                        onClick={nextLevel}
+                        className="w-full py-5 bg-cyan-500 text-black font-black text-xl rounded-2xl hover:scale-105 transition-transform flex items-center justify-center gap-2"
+                      >
+                        <ChevronRight className="w-6 h-6" /> 进入下一关
+                      </button>
+                      <button 
+                        onClick={() => setGameState('START')}
+                        className="w-full py-5 bg-white/5 border border-white/10 text-white font-bold rounded-2xl hover:bg-white/10 transition-all"
+                      >
+                        返回主菜单
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </motion.div>
             )}
@@ -967,12 +1032,20 @@ export default function App() {
                     </div>
                   </div>
 
-                  <button 
-                    onClick={initGame}
-                    className="w-full py-6 bg-white text-black font-black text-2xl rounded-3xl hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-3 shadow-2xl"
-                  >
-                    <RotateCcw className="w-8 h-8" /> 再次尝试
-                  </button>
+                  <div className="space-y-4">
+                    <button 
+                      onClick={() => initGame()}
+                      className="w-full py-6 bg-white text-black font-black text-2xl rounded-3xl hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-3 shadow-2xl"
+                    >
+                      <RotateCcw className="w-8 h-8" /> 再次尝试
+                    </button>
+                    <button 
+                      onClick={() => setGameState('START')}
+                      className="w-full py-5 bg-white/5 border border-white/10 text-white font-bold rounded-2xl hover:bg-white/10 transition-all"
+                    >
+                      返回主菜单
+                    </button>
+                  </div>
                 </div>
               </motion.div>
             )}
