@@ -688,6 +688,29 @@ export default function App() {
     keysRef.current[' '] = false;
   };
 
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (gameState !== 'PLAYING') return;
+    const canvas = canvasRef.current;
+    if (canvas) {
+      const rect = canvas.getBoundingClientRect();
+      playerRef.current.x = e.clientX - rect.left;
+      playerRef.current.y = e.clientY - rect.top;
+    }
+  };
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (gameState !== 'PLAYING') return;
+    if (e.button === 0) { // Left click
+      keysRef.current[' '] = true;
+    }
+  };
+
+  const handleMouseUp = (e: React.MouseEvent) => {
+    if (e.button === 0) {
+      keysRef.current[' '] = false;
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#020205] text-white font-sans overflow-hidden selection:bg-cyan-500/30">
       <div className="fixed inset-0 pointer-events-none opacity-30">
@@ -709,8 +732,8 @@ export default function App() {
                 <Gamepad2 className="w-4 h-4" /> 操作指南
               </h3>
               <ul className="space-y-3 text-sm text-white/60">
-                <li className="flex justify-between"><span>移动</span> <span className="text-white font-mono">WASD / 方向键</span></li>
-                <li className="flex justify-between"><span>射击</span> <span className="text-white font-mono">空格键</span></li>
+                <li className="flex justify-between"><span>移动</span> <span className="text-white font-mono">WASD / 鼠标移动</span></li>
+                <li className="flex justify-between"><span>射击</span> <span className="text-white font-mono">空格 / 鼠标左键</span></li>
                 <li className="flex justify-between"><span>暂停</span> <span className="text-white font-mono">P 键</span></li>
                 <li className="flex justify-between"><span>触屏</span> <span className="text-white font-mono">滑动移动+自动射击</span></li>
               </ul>
@@ -829,7 +852,10 @@ export default function App() {
             onTouchMove={handleTouch}
             onTouchStart={handleTouch}
             onTouchEnd={handleTouchEnd}
-            className="w-full h-full cursor-crosshair"
+            onMouseMove={handleMouseMove}
+            onMouseDown={handleMouseDown}
+            onMouseUp={handleMouseUp}
+            className="w-full h-full cursor-none"
           />
 
           <AnimatePresence>
@@ -855,7 +881,7 @@ export default function App() {
                   <div className="grid grid-cols-2 gap-4 text-left">
                     <div className="p-5 rounded-3xl bg-white/5 border border-white/10 backdrop-blur-sm">
                       <p className="text-[10px] font-bold text-white/40 uppercase mb-2">Desktop</p>
-                      <p className="text-xs text-white/80">WASD 移动<br/>空格 射击</p>
+                      <p className="text-xs text-white/80">WASD / 鼠标移动<br/>空格 / 点击射击</p>
                     </div>
                     <div className="p-5 rounded-3xl bg-white/5 border border-white/10 backdrop-blur-sm">
                       <p className="text-[10px] font-bold text-white/40 uppercase mb-2">Mobile</p>
