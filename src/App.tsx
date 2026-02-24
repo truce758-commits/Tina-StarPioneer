@@ -310,13 +310,29 @@ export default function App() {
   // --- Game Loop Logic ---
 
   const spawnEnemy = (width: number) => {
-    const types: Enemy['type'][] = ['basic', 'fast', 'heavy'];
-    const type = types[Math.floor(Math.random() * Math.min(level, 3))];
-    
+    const now = Date.now();
     const diffMod = difficulty === 'EASY' ? 0.7 : difficulty === 'HARD' ? 1.5 : 1;
     
+    // Weighted selection for enemy types
+    let type: Enemy['type'] = 'basic';
+    const roll = Math.random();
+    
+    if (level === 1) {
+      // Level 1: 70% basic, 30% fast
+      type = roll < 0.7 ? 'basic' : 'fast';
+    } else if (level === 2) {
+      // Level 2: 40% basic, 40% fast, 20% heavy
+      if (roll < 0.4) type = 'basic';
+      else if (roll < 0.8) type = 'fast';
+      else type = 'heavy';
+    } else {
+      // Level 3+: 30% basic, 40% fast, 30% heavy
+      if (roll < 0.3) type = 'basic';
+      else if (roll < 0.7) type = 'fast';
+      else type = 'heavy';
+    }
+    
     let enemy: Enemy;
-    const now = Date.now();
     switch(type) {
       case 'fast':
         enemy = { x: randomRange(30, width - 30), y: -50, width: 45, height: 45, hp: 1, maxHp: 1, speed: (4 + level * 0.5) * diffMod, type, color: COLORS.FAST, scoreValue: 150, lastShot: now };
