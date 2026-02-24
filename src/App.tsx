@@ -319,13 +319,13 @@ export default function App() {
     const now = Date.now();
     switch(type) {
       case 'fast':
-        enemy = { x: randomRange(20, width - 20), y: -50, width: 30, height: 30, hp: 1, maxHp: 1, speed: (4 + level * 0.5) * diffMod, type, color: COLORS.FAST, scoreValue: 150, lastShot: now };
+        enemy = { x: randomRange(30, width - 30), y: -50, width: 45, height: 45, hp: 1, maxHp: 1, speed: (4 + level * 0.5) * diffMod, type, color: COLORS.FAST, scoreValue: 150, lastShot: now };
         break;
       case 'heavy':
-        enemy = { x: randomRange(40, width - 40), y: -50, width: 60, height: 60, hp: Math.ceil(3 * diffMod), maxHp: Math.ceil(3 * diffMod), speed: (1.5 + level * 0.1) * diffMod, type, color: COLORS.HEAVY, scoreValue: 500, lastShot: now };
+        enemy = { x: randomRange(50, width - 50), y: -50, width: 80, height: 80, hp: Math.ceil(3 * diffMod), maxHp: Math.ceil(3 * diffMod), speed: (1.5 + level * 0.1) * diffMod, type, color: COLORS.HEAVY, scoreValue: 500, lastShot: now };
         break;
       default:
-        enemy = { x: randomRange(30, width - 30), y: -50, width: 40, height: 40, hp: 1, maxHp: 1, speed: (2 + level * 0.2) * diffMod, type: 'basic', color: COLORS.BASIC, scoreValue: 100, lastShot: now };
+        enemy = { x: randomRange(40, width - 40), y: -50, width: 60, height: 60, hp: 1, maxHp: 1, speed: (2 + level * 0.2) * diffMod, type: 'basic', color: COLORS.BASIC, scoreValue: 100, lastShot: now };
     }
     enemiesRef.current.push(enemy);
   };
